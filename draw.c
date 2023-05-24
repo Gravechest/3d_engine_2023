@@ -3,6 +3,8 @@
 #include "cubemap.h"
 #include "tmath.h"
 
+#include <intrin.h>
+
 typedef struct{
 	VEC3 pos;
 	VEC3 dir;
@@ -76,7 +78,9 @@ VEC3 getReflection(SQUARE* square,int index,VEC2 cm,int crd){
 }
 
 void drawTexture(VEC3* color,VEC2 pos,float dst,VEC3 ang,VEC3 normal,TXMAP txmap,TEXTURE* texture){
-	int i_dst = tMin(32 - __lzcnt((unsigned int)(dst / -VEC3dotR(ang,normal) * txmap.scale * texture->size / WND_RESOLUTION.y)),texture->mipmap_amm);
+	int i_dst;
+	_BitScanReverse(&i_dst,(unsigned int)(dst / -VEC3dotR(ang,normal) * txmap.scale * texture->size / WND_RESOLUTION.y));
+	i_dst = tMin(i_dst,texture->mipmap_amm);
 	IVEC2 tx_crd;
 	int tx_size = texture->size;
 	tx_size >>= i_dst;
@@ -203,6 +207,8 @@ void hitRayNormal(PRIMITIVE* hitted,VEC3* color,VEC3 pos,VEC3 ang,VEC2 uv,float 
 		lm_crd_2 = (IVEC2){crd.x+1,crd.y+0};
 		lm_crd_3 = (IVEC2){crd.x+0,crd.y+1};
 		lm_crd_4 = (IVEC2){crd.x+1,crd.y+1};
+
+		printf("%i\n",lm_crd_4.y * (int)(triangle.size.x+2) + lm_crd_4.x);
 
 		c_1 = triangle.lightmap[lm_crd_1.y * (int)(triangle.size.x+2) + lm_crd_1.x];
 		c_2 = triangle.lightmap[lm_crd_2.y * (int)(triangle.size.x+2) + lm_crd_2.x];
@@ -355,17 +361,6 @@ void hitRayNormal(PRIMITIVE* hitted,VEC3* color,VEC3 pos,VEC3 ang,VEC2 uv,float 
 			drawTexture(color,sp_pos,dst,ang,VEC3normalizeR(VEC3subVEC3R(pos,sphere.pos)),sphere.texture,texture);
 		break;
 	case PR_LIGHTSQUARE:
-		if(texture){
-			int i_dst = tMin(32 - __lzcnt((unsigned int)(dst / -VEC3dotR(ang,square.normal) * square.texture.scale)),texture->mipmap_amm);
-			i_dst = 0;
-			IVEC2 tx_crd;
-			int tx_size = texture->size;
-			tx_size >>= i_dst;
-			tx_crd.x = tFract(l_pos.x * square.texture.scale + square.texture.offset.x) * tx_size;
-			tx_crd.y = tFract(l_pos.y * square.texture.scale + square.texture.offset.y) * tx_size;
-			VEC3 tx = texture->data[i_dst][tx_crd.y * tx_size + tx_crd.x];
-			VEC3mulVEC3(&b_color,tx);
-		}
 		VEC3mulVEC3(color,hitted->square.color);
 		break;
 	}

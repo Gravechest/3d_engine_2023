@@ -208,7 +208,6 @@ typedef struct{
 	VEC3* color;
 	RGB* draw;
 	RGB* render;
-	VEC3* ray_ang;
 	VEC2* uv;
 }VRAM;
 

@@ -81,7 +81,7 @@ TEXTUREPROP loadBMP(char* name){
 		text_v[i/3].b = (float)text[i + 2] / 255.0f;
 	}
 	MFREE(text);
-	return (TEXTUREPROP){.data = text_v,.size = sqrtf((fsize - offset) / 3)};
+	return (TEXTUREPROP){text_v,.size = sqrtf((fsize - offset) / 3)};
 }
 
 char pointInBox(VEC3 point,VEC3 box_pos,VEC3 box_size){
@@ -173,12 +173,12 @@ void movePrimitive(int axis,float ammount){
 		boxhub.selected->hitbox->pos.a[axis] += ammount;
 		break;
 	case PR_TRIANGLE:;
+		VEC2 size;
 		TRIANGLE* triangle = &primitivehub.selected->triangle;
 		triangle->pos[triangle_point_selected].a[axis] += ammount;
 		triangle->normal = triangleNormal(triangle->pos[0],triangle->pos[1],triangle->pos[2]);
-		VEC2 size = {VEC3distance(triangle->pos[0],triangle->pos[1])*LM_SIZE,VEC3distance(triangle->pos[0],triangle->pos[2])*LM_SIZE};
-		size.x = tCeilingf(size.x);
-		size.y = tCeilingf(size.y);
+		size.x = tCeilingf(VEC3distance(triangle->pos[0],triangle->pos[1])*LM_SIZE);
+		size.y = tCeilingf(VEC3distance(triangle->pos[0],triangle->pos[2])*LM_SIZE);
 		triangle->size = size;
 		break;
 	}
@@ -216,7 +216,11 @@ char executeButton(VEC2 cur_pos){
 				case 0: addBox(pos,(VEC3){1.0f,1.0f,1.0f},VEC3_SINGLE(0.9),PR_SQUARE); break;
 				case 1: addBox(pos,(VEC3){1.0f,1.0f,1.0f},VEC3_SINGLE(0.9),PR_LIGHTSQUARE); break;
 				case 2: addSphere(pos,VEC3_SINGLE(0.9f),1.0f,PR_SPHERE); break;
-				case 3: addTriangle(pos,VEC3addVEC3R(pos,(VEC3){1.0f,0.0f,0.0f}),VEC3addVEC3R(pos,(VEC3){0.0f,1.0f,0.0f}),VEC3_SINGLE(0.9f));
+				case 3:;
+					VEC3 p1 = VEC3addVEC3R(pos,(VEC3){1.0f,0.0f,0.0f});
+					VEC3 p2 = VEC3addVEC3R(pos,(VEC3){0.0f,1.0f,0.0f});
+					addTriangle(pos,p1,p2,VEC3_SINGLE(0.9f));
+					break;
 				}
 				break;
 			case BTN_CYCLEPRIMITIVE_R:
@@ -278,14 +282,14 @@ char executeButton(VEC2 cur_pos){
 				}
 				break;}
 			case BTN_TOGGLELIGHT:
-				camera.rd_mode ^= TRUE;
-				if(camera.rd_mode){
+				if(!camera.rd_mode){
 					gen_light_thread = CreateThread(0,0,genLight,0,0,0);
 					camera.exposure = 1.0f;
 				}
-				else
+				else{
 					TerminateThread(gen_light_thread,0);
-				Sleep(15);
+					camera.rd_mode = FALSE;
+				}
 				break;
 			case BTN_SUBPOS_X: movePrimitive(VEC3_X,-grid_size); break;
 			case BTN_ADDPOS_X: movePrimitive(VEC3_X, grid_size); break;
@@ -486,8 +490,11 @@ int proc(HWND hwnd,UINT msg,WPARAM wParam,LPARAM lParam){
 		for(int i = 0;i < primitivehub.cnt;i++){
 			PRIMITIVE pr = primitivehub.primitive[i];
 			switch(pr.type){
-			case PR_SQUARE:
-				WriteFile(temp,pr.square.lightmap,(int)(pr.square.size.x * LM_SIZE+2) * (int)(pr.square.size.y * LM_SIZE+2) * sizeof(VEC3),0,0);
+			case PR_SQUARE:;
+				IVEC2 size;
+				size.x = pr.square.size.x * LM_SIZE+2;
+				size.y = pr.square.size.y * LM_SIZE+2;
+				WriteFile(temp,pr.square.lightmap,size.x * size.y * sizeof(VEC3),0,0);
 				break;
 			case PR_SPHERE:
 				for(int i = 0;i < 6;i++)
@@ -733,7 +740,7 @@ void mapSphereRegion(PRIMITIVE* primitive,int b_x,CAMERA camera_rd){
 	region.min.y += (region.min.y & 1) ? !(b_x >> 1 & 1) : (b_x >> 1 & 1);
 	for(int x = region.min.x;x < region.max.x;x+=2){ 
 		for(int y = region.min.y;y < region.max.y;y+=2){
-			VEC3 ray_ang = vram.ray_ang[x * WND_RESOLUTION.y + y];
+			VEC3 ray_ang = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 			float dst = rayIntersectSphere(camera_rd.pos,sphere.pos,ray_ang,sphere.radius);
 			if(dst > 0 && vram.zbuffer[x * WND_RESOLUTION.y + y].dst > dst){
 				vram.zbuffer[x * WND_RESOLUTION.y + y].dst = dst;
@@ -747,12 +754,12 @@ void mapTriangleRegion(PRIMITIVE* primitive,int b_x,CAMERA camera_rd){
 	TRIANGLE triangle = primitive->triangle;
 	if(VEC3dotR(triangle.normal,VEC3subVEC3R(camera_rd.pos,triangle.pos[0])) < 0.0f)
 		return;
-	REGION region = boundRegionTriangle(triangle.pos[0],triangle.pos[1],triangle.pos[2],camera_rd.pos,camera_rd.dir_tri,0);;
+	REGION region = boundRegionTriangle(triangle.pos[0],triangle.pos[1],triangle.pos[2],camera_rd.pos,camera_rd.dir_tri,0);
 	region.min.x += (region.min.x & 1) ? !(b_x & 1) : (b_x & 1);
 	region.min.y += (region.min.y & 1) ? !(b_x >> 1 & 1) : (b_x >> 1 & 1);
 	for(int x = region.min.x;x < region.max.x;x+=2){ 
 		for(int y = region.min.y;y < region.max.y;y+=2){
-			VEC3 ray_ang = vram.ray_ang[x * WND_RESOLUTION.y + y];
+			VEC3 ray_ang = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 			VEC3 dst = rayIntersectTriangle(camera_rd.pos,ray_ang,triangle.pos[0],triangle.pos[1],triangle.pos[2]);
 			if(dst.x > 0 && vram.zbuffer[x * WND_RESOLUTION.y + y].dst > dst.x){
 				vram.zbuffer[x * WND_RESOLUTION.y + y].dst = dst.x;
@@ -782,7 +789,7 @@ void mapSquareRegion(PRIMITIVE* primitive,int b_x,CAMERA camera_rd){
 	region.min.y += (region.min.y & 1) ? !(b_x >> 1 & 1) : (b_x >> 1 & 1);
 	for(int x = region.min.x;x < region.max.x;x+=2){
 		for(int y = region.min.y;y < region.max.y;y+=2){
-			VEC3 ray_ang = vram.ray_ang[x * WND_RESOLUTION.y + y];
+			VEC3 ray_ang = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 			float dst = rayIntersectSquare(camera_rd.pos,ray_ang,&square);
 			if(dst > 0 && vram.zbuffer[x * WND_RESOLUTION.y + y].dst > dst){
 				vram.zbuffer[x * WND_RESOLUTION.y + y].dst = dst;
@@ -795,11 +802,11 @@ void mapSquareRegion(PRIMITIVE* primitive,int b_x,CAMERA camera_rd){
 void camFlat(int b_x,CAMERA camera_rd){
 	for(int x = b_x & 1;x < WND_RESOLUTION.x;x+=2){ 
 		for(int y = b_x >> 1 & 1;y < WND_RESOLUTION.y;y+=2){
-			VEC3 ray_ang = vram.ray_ang[x * WND_RESOLUTION.y + y];
 			float dst = vram.zbuffer[x * WND_RESOLUTION.y + y].dst;
 			if(!dst)
 				continue;
 			if(dst != 999999.0f){
+				VEC3 ray_ang = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 				VEC3 color = {127.0f,127.0f,127.0f};
 				VEC3 pos = VEC3addVEC3R(camera_rd.pos,VEC3mulR(ray_ang,vram.zbuffer[x * WND_RESOLUTION.y + y].dst));
 				hitRayFlat(vram.zbuffer[x * WND_RESOLUTION.y + y].primitive,&color,pos,ray_ang,vram.uv[x * WND_RESOLUTION.y + y],dst);
@@ -809,6 +816,7 @@ void camFlat(int b_x,CAMERA camera_rd){
 				continue;
 			}
 			int index;
+			VEC3 ray_ang = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 			VEC2 cm = VEC2mulR(sampleCube(ray_ang,&index),skybox.size);
 			IVEC2 cmi = {cm.x,cm.y};
 			VEC3 color = VEC3mulR(skybox.sides[index][cmi.x * skybox.size + cmi.y],255.0f);
@@ -823,11 +831,11 @@ void camNormal(int b_x,CAMERA camera_rd){
 	float brightness = 0.0f;
 	for(int x = b_x & 1;x < WND_RESOLUTION.x;x+=2){ 
 		for(int y = b_x >> 1 & 1;y < WND_RESOLUTION.y;y+=2){
-			VEC3 ray_ang = vram.ray_ang[x * WND_RESOLUTION.y + y];
 			float dst = vram.zbuffer[x * WND_RESOLUTION.y + y].dst;
 			if(!dst)
 				continue;
 			if(dst != 999999.0f){
+				VEC3 ray_ang = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 				VEC3 color = {127.0f,127.0f,127.0f};
 				VEC3 pos = VEC3addVEC3R(camera_rd.pos,VEC3mulR(ray_ang,vram.zbuffer[x * WND_RESOLUTION.y + y].dst));
 				hitRayNormal(vram.zbuffer[x * WND_RESOLUTION.y + y].primitive,&color,pos,ray_ang,vram.uv[x * WND_RESOLUTION.y + y],dst);
@@ -839,6 +847,7 @@ void camNormal(int b_x,CAMERA camera_rd){
 				continue;
 			}
 			int index;
+			VEC3 ray_ang = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 			VEC2 cm = VEC2mulR(sampleCube(ray_ang,&index),skybox.size);
 			IVEC2 cmi = {cm.x,cm.y};
 			brightness += tMax(tMaxf(skybox.sides[index][cmi.x * skybox.size + cmi.y].x,skybox.sides[index][cmi.x * skybox.size + cmi.y].y),skybox.sides[index][cmi.x * skybox.size + cmi.y].z);
@@ -936,7 +945,6 @@ void draw(int b_x){
 		for(int x = b_x & 1;x < WND_RESOLUTION.x;x+=2){ 
 			for(int y = b_x >> 1 & 1;y < WND_RESOLUTION.y;y+=2){
 				vram.zbuffer[x * WND_RESOLUTION.y + y].dst = 999999.0f;
-				vram.ray_ang[x * WND_RESOLUTION.y + y] = getRayAngle(WND_RESOLUTION,camera_rd.dir_tri,x,y);
 			}
 		}
 		for(int i = 0;i < primitivehub.cnt;i++){
@@ -1071,7 +1079,6 @@ void main(){
 	vram.draw         = MALLOC(sizeof(RGB)    *WND_RESOLUTION.x*WND_RESOLUTION.y);
 	vram.color        = MALLOC(sizeof(VEC3)   *WND_RESOLUTION.x*WND_RESOLUTION.y);
 	vram.zbuffer      = MALLOC_ZERO(sizeof(ZBUFFER)*WND_RESOLUTION.x*WND_RESOLUTION.y);
-	vram.ray_ang      = MALLOC(sizeof(VEC3)   *WND_RESOLUTION.x*WND_RESOLUTION.y);
 	vram.uv           = MALLOC(sizeof(VEC2) *WND_RESOLUTION.x*WND_RESOLUTION.y);
 	cm_zbuffer        = MALLOC_ZERO(sizeof(ZBUFFER)*CM_SIZE*CM_SIZE);
 	skybox.size = 128;
@@ -1295,11 +1302,6 @@ void main(){
 	HANDLE thread_draw_2 = CreateThread(0,0,(LPTHREAD_START_ROUTINE)draw_2,0,0,0);
 	HANDLE thread_draw_3 = CreateThread(0,0,(LPTHREAD_START_ROUTINE)draw_3,0,0,0);
 	HANDLE thread_draw_4 = CreateThread(0,0,(LPTHREAD_START_ROUTINE)draw_4,0,0,0);
-
-	SetThreadPriority(thread_draw_1,THREAD_PRIORITY_ABOVE_NORMAL);
-	SetThreadPriority(thread_draw_2,THREAD_PRIORITY_ABOVE_NORMAL);
-	SetThreadPriority(thread_draw_3,THREAD_PRIORITY_ABOVE_NORMAL);
-	SetThreadPriority(thread_draw_4,THREAD_PRIORITY_ABOVE_NORMAL);
 
 	CreateThread(0,0,physics,0,0,0);
 

@@ -294,6 +294,7 @@ void genLight(){
 			square->lightmap = MALLOC_ZERO((int)(size.x+2) * (int)(size.y+2) * sizeof(VEC3));
 		}
 	}
+	camera.rd_mode = TRUE;
 	for(float quality = 1.0f;quality < LM_QUALITY;quality *= 4.0f){
 		for(int i = 0;i < primitivehub.cnt;i++){
 			switch(primitivehub.primitive[i].type){
